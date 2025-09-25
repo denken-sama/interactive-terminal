@@ -15,6 +15,8 @@ export class InputHandler {
     return new Promise((resolve) => {
       this.rl.question(chalk.cyan.bold(question + ' '), (answer: string) => {
         resolve(answer.trim());
+        // Ensure we close readline after getting input to avoid conflicts
+        this.rl.close();
       });
     });
   }

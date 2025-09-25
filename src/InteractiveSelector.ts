@@ -1,25 +1,19 @@
-import * as readline from "readline";
-import chalk from "chalk";
-import {
-  SelectionConfig,
-  SelectionOption,
-  SelectionResult,
-  KeyPress,
-} from "./types";
+import chalk from 'chalk';
+import { SelectionConfig, SelectionOption, SelectionResult, KeyPress } from './types.js';
 
 export class InteractiveSelector {
   private currentIndex: number = 0;
   private config: SelectionConfig;
   private resolve?: (result: SelectionResult) => void;
   private reject?: (error: Error) => void;
-  private hasRenderedBefore: boolean = false;
+  private originalRawMode: boolean = false;
 
   constructor(config: SelectionConfig) {
     this.config = {
-      selectedColor: "blue",
-      unselectedColor: "white",
-      descriptionColor: "gray",
-      ...config,
+      selectedColor: 'blue',
+      unselectedColor: 'white',
+      descriptionColor: 'gray',
+      ...config
     };
   }
 
@@ -28,77 +22,93 @@ export class InteractiveSelector {
       this.resolve = resolve;
       this.reject = reject;
 
-      // Setup raw input mode
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(true);
-      }
-
-      process.stdin.resume();
-      process.stdin.on("data", this.handleInput.bind(this));
-
-      // Hide cursor and display initial selection
-      process.stdout.write("\x1B[?25l");
+      this.setupTerminal();
       this.render();
+      this.startInputListener();
     });
   }
 
-  private handleInput(buffer: Buffer): void {
-    const input = buffer.toString();
-    const key = this.parseKey(buffer);
+  private setupTerminal(): void {
+    // Store original state
+    this.originalRawMode = process.stdin.isRaw || false;
+    
+    // Set raw mode for immediate input
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    
+    // Set encoding and resume stdin
+    process.stdin.setEncoding('utf8');
+    process.stdin.resume();
+    
+    // Hide cursor during selection
+    process.stdout.write('\x1B[?25l');
+  }
+
+  private startInputListener(): void {
+    process.stdin.on('data', this.handleKeyPress.bind(this));
+  }
+
+  private handleKeyPress(data: Buffer | string): void {
+    const input = data.toString();
+    const key = this.parseInput(input);
 
     switch (key.name) {
-      case "up":
+      case 'up':
         this.moveUp();
         break;
-      case "down":
+      case 'down':
         this.moveDown();
         break;
-      case "return":
-      case "enter":
+      case 'enter':
         this.selectCurrent();
         break;
-      case "escape":
-      case "q":
-        this.cleanup();
-        if (this.reject) {
-          this.reject(new Error("Selection cancelled"));
-        }
+      case 'escape':
+      case 'q':
+        this.cancel();
         break;
-      case "c":
-        if (key.ctrl) {
-          this.cleanup();
-          process.exit(0);
-        }
+      case 'ctrl+c':
+        this.forceExit();
         break;
     }
   }
 
-  private parseKey(buffer: Buffer): KeyPress {
-    const input = buffer.toString();
+  private parseInput(input: string): KeyPress {
     const key: KeyPress = {};
-
-    if (buffer.length === 1) {
-      const code = buffer[0];
-      if (code === 3) {
-        key.name = "c";
-        key.ctrl = true;
-      } else if (code === 13) {
-        key.name = "return";
-      } else if (code === 27) {
-        key.name = "escape";
-      } else if (code === 113) {
-        key.name = "q";
+    
+    // Handle multi-character sequences (arrow keys)
+    if (input.length === 3 && input[0] === '\x1b' && input[1] === '[') {
+      switch (input[2]) {
+        case 'A':
+          key.name = 'up';
+          break;
+        case 'B':
+          key.name = 'down';
+          break;
+        case 'C':
+          key.name = 'right';
+          break;
+        case 'D':
+          key.name = 'left';
+          break;
       }
-    } else if (buffer.length === 3) {
-      if (buffer[0] === 27 && buffer[1] === 91) {
-        switch (buffer[2]) {
-          case 65:
-            key.name = "up";
-            break;
-          case 66:
-            key.name = "down";
-            break;
-        }
+    }
+    // Handle single characters
+    else if (input.length === 1) {
+      const code = input.charCodeAt(0);
+      switch (code) {
+        case 3: // Ctrl+C
+          key.name = 'ctrl+c';
+          break;
+        case 13: // Enter
+          key.name = 'enter';
+          break;
+        case 27: // Escape
+          key.name = 'escape';
+          break;
+        case 113: // 'q'
+          key.name = 'q';
+          break;
       }
     }
 
@@ -106,67 +116,52 @@ export class InteractiveSelector {
   }
 
   private moveUp(): void {
-    this.currentIndex =
-      this.currentIndex > 0
-        ? this.currentIndex - 1
-        : this.config.options.length - 1;
-    this.render();
+    this.currentIndex = this.currentIndex > 0 ? this.currentIndex - 1 : this.config.options.length - 1;
+    this.updateDisplay();
   }
 
   private moveDown(): void {
-    this.currentIndex =
-      this.currentIndex < this.config.options.length - 1
-        ? this.currentIndex + 1
-        : 0;
-    this.render();
+    this.currentIndex = this.currentIndex < this.config.options.length - 1 ? this.currentIndex + 1 : 0;
+    this.updateDisplay();
   }
 
   private selectCurrent(): void {
     const selectedOption = this.config.options[this.currentIndex];
     const result: SelectionResult = {
       selectedOption,
-      selectedIndex: this.currentIndex,
+      selectedIndex: this.currentIndex
     };
 
     this.cleanup();
-
+    
     if (this.resolve) {
       this.resolve(result);
     }
   }
 
-  private cleanup(): void {
-    // Show cursor
-    process.stdout.write("\x1B[?25h");
-
-    // Restore normal input mode
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(false);
+  private cancel(): void {
+    this.cleanup();
+    if (this.reject) {
+      this.reject(new Error('Selection cancelled'));
     }
+  }
 
-    process.stdin.removeAllListeners("data");
-    process.stdin.pause();
+  private forceExit(): void {
+    this.cleanup();
+    process.exit(0);
   }
 
   private render(): void {
-    // Only clear our selector content, not everything above
-    if (this.hasRenderedBefore) {
-      const linesToClear = this.config.options.length * 2 + 2; // +2 for message and empty line
-      this.moveCursorUp(linesToClear);
-      this.clearFromCursor();
-    }
-
     // Render message
-    console.log(chalk.white.bold(this.config.message));
-    console.log(); // Empty line
-
+    process.stdout.write(chalk.white.bold(this.config.message) + '\n');
+    
     // Render options
     this.config.options.forEach((option, index) => {
       const isSelected = index === this.currentIndex;
-      const arrow = isSelected ? "❯ " : "  ";
-
+      const arrow = isSelected ? '❯ ' : '  ';
+      
       let titleColor: chalk.Chalk;
-
+      
       if (isSelected) {
         titleColor = this.getSelectedColor();
       } else {
@@ -174,62 +169,79 @@ export class InteractiveSelector {
       }
 
       const descriptionColor = this.getDescriptionColor();
-
-      console.log(`${arrow}${titleColor(option.title)}`);
-      console.log(`    ${descriptionColor(option.description)}`);
+      
+      process.stdout.write(`${arrow}${titleColor(option.title)}\n`);
+      process.stdout.write(`    ${descriptionColor(option.description)}\n`);
     });
+  }
 
-    this.hasRenderedBefore = true;
+  private updateDisplay(): void {
+    // Move cursor up to start of options (message line + all option lines)
+    const totalLines = this.config.options.length * 2;
+    process.stdout.write(`\x1B[${totalLines}A`);
+    
+    // Re-render all options
+    this.config.options.forEach((option, index) => {
+      const isSelected = index === this.currentIndex;
+      const arrow = isSelected ? '❯ ' : '  ';
+      
+      let titleColor: chalk.Chalk;
+      
+      if (isSelected) {
+        titleColor = this.getSelectedColor();
+      } else {
+        titleColor = this.getUnselectedColor();
+      }
+
+      const descriptionColor = this.getDescriptionColor();
+      
+      // Clear the line and write new content
+      process.stdout.write('\x1B[2K'); // Clear entire line
+      process.stdout.write(`${arrow}${titleColor(option.title)}\n`);
+      process.stdout.write('\x1B[2K'); // Clear entire line
+      process.stdout.write(`    ${descriptionColor(option.description)}\n`);
+    });
+  }
+
+  private cleanup(): void {
+    // Remove input listener
+    process.stdin.removeAllListeners('data');
+    
+    // Show cursor
+    process.stdout.write('\x1B[?25h');
+    
+    // Restore terminal mode
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(this.originalRawMode);
+    }
+    
+    process.stdin.pause();
   }
 
   private getSelectedColor(): chalk.Chalk {
     switch (this.config.selectedColor) {
-      case "blue":
-        return chalk.blue.bold;
-      case "green":
-        return chalk.green.bold;
-      case "cyan":
-        return chalk.cyan.bold;
-      case "magenta":
-        return chalk.magenta.bold;
-      case "yellow":
-        return chalk.yellow.bold;
-      default:
-        return chalk.blue.bold;
+      case 'blue': return chalk.blue.bold;
+      case 'green': return chalk.green.bold;
+      case 'cyan': return chalk.cyan.bold;
+      case 'magenta': return chalk.magenta.bold;
+      case 'yellow': return chalk.yellow.bold;
+      default: return chalk.blue.bold;
     }
   }
 
   private getUnselectedColor(): chalk.Chalk {
     switch (this.config.unselectedColor) {
-      case "white":
-        return chalk.white;
-      case "gray":
-      case "grey":
-        return chalk.gray;
-      default:
-        return chalk.white;
+      case 'white': return chalk.white;
+      case 'gray': case 'grey': return chalk.gray;
+      default: return chalk.white;
     }
   }
 
   private getDescriptionColor(): chalk.Chalk {
     switch (this.config.descriptionColor) {
-      case "gray":
-      case "grey":
-        return chalk.gray;
-      case "dim":
-        return chalk.dim;
-      default:
-        return chalk.gray;
+      case 'gray': case 'grey': return chalk.gray;
+      case 'dim': return chalk.dim;
+      default: return chalk.gray;
     }
-  }
-
-  private moveCursorUp(lines: number): void {
-    if (lines > 0) {
-      process.stdout.write(`\x1B[${lines}A`);
-    }
-  }
-
-  private clearFromCursor(): void {
-    process.stdout.write("\x1B[0J");
   }
 }

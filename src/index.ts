@@ -4,10 +4,14 @@ import { InputHandler } from "./InputHandler";
 import { SelectionConfig, SelectionOption, SelectionResult } from "./types";
 
 class TerminalApp {
-  private inputHandler: InputHandler;
-
   constructor() {
-    this.inputHandler = new InputHandler();
+    // No longer store inputHandler as instance variable
+  }
+
+  private async askQuestion(question: string): Promise<string> {
+    const inputHandler = new InputHandler();
+    const answer = await inputHandler.askQuestion(question);
+    return answer;
   }
 
   public async start(): Promise<void> {
@@ -21,7 +25,7 @@ class TerminalApp {
       );
 
       // Get user input
-      const userMessage = await this.inputHandler.askQuestion(
+      const userMessage = await this.askQuestion(
         "What do you want to say today?"
       );
 
@@ -32,7 +36,6 @@ class TerminalApp {
         console.log(chalk.red(`\nError: ${error.message}`));
       }
     } finally {
-      this.inputHandler.close();
     }
   }
 
@@ -78,7 +81,7 @@ class TerminalApp {
   private async handleFirstSelection(result: SelectionResult): Promise<void> {
     console.log(); // Add some space
 
-    this.inputHandler.displayProcessing("Processing...");
+    this.displayProcessing("Processing...");
 
     // Simulate processing time
     await this.delay(1000);
@@ -183,7 +186,7 @@ class TerminalApp {
   private async handleSecondSelection(result: SelectionResult): Promise<void> {
     console.log(); // Add some space
 
-    this.inputHandler.displayProcessing("Finalizing your selection...");
+    this.displayProcessing("Finalizing your selection...");
 
     // Simulate processing time
     await this.delay(800);
@@ -200,6 +203,10 @@ class TerminalApp {
       chalk.cyan("Thank you for using Interactive Terminal Selector!")
     );
     console.log(chalk.gray("Session completed successfully."));
+  }
+
+  private displayProcessing(message: string = "Processing..."): void {
+    console.log(chalk.dim(message));
   }
 
   private delay(ms: number): Promise<void> {
