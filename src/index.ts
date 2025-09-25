@@ -15,27 +15,47 @@ class TerminalApp {
   }
 
   public async start(): Promise<void> {
-    try {
-      console.clear();
-      console.log(chalk.cyan.bold("🚀 Interactive Terminal Selector"));
-      console.log(
-        chalk.gray(
-          "Use arrow keys to navigate, Enter to select, Escape or Q to quit\n"
-        )
-      );
+    console.log(chalk.cyan.bold("🚀 Interactive Terminal Selector"));
+    console.log(
+      chalk.gray(
+        "Use arrow keys to navigate, Enter to select, Escape or Q to quit\n"
+      )
+    );
 
-      // Get user input
-      const userMessage = await this.askQuestion(
-        "What do you want to say today?"
-      );
+    await this.sessionLoop();
+  }
 
-      // Show first selection directly (no extra output)
-      await this.showFirstSelection();
-    } catch (error) {
-      if (error instanceof Error) {
-        console.log(chalk.red(`\nError: ${error.message}`));
+  private async sessionLoop(): Promise<void> {
+    let isFirstSession = true;
+
+    while (true) {
+      try {
+        // Get user input
+        const question = isFirstSession
+          ? "What do you want to say today?"
+          : "What do you want to say next?";
+        const userMessage = await this.askQuestion(question);
+
+        // Show first selection directly (no extra output)
+        await this.showFirstSelection();
+
+        // After completion, continue to next iteration
+        isFirstSession = false;
+        console.log("\n"); // Add some space before next session
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === "Selection cancelled") {
+            console.log(chalk.yellow("\nSession cancelled. Goodbye!"));
+            break;
+          } else if (error.message === "Force exit") {
+            break;
+          } else {
+            console.log(chalk.red(`\nError: ${error.message}`));
+            // Continue the loop even on error
+            continue;
+          }
+        }
       }
-    } finally {
     }
   }
 
@@ -155,8 +175,8 @@ class TerminalApp {
             value: "help",
           },
           {
-            title: "Exit Gracefully",
-            description: "Leave the application",
+            title: "Exit Application",
+            description: "Leave the application completely",
             value: "exit",
           },
         ];
@@ -199,10 +219,17 @@ class TerminalApp {
     );
     console.log(chalk.dim(`Value: ${result.selectedOption.value}\n`));
 
-    console.log(
-      chalk.cyan("Thank you for using Interactive Terminal Selector!")
-    );
-    console.log(chalk.gray("Session completed successfully."));
+    // Check if user wants to exit
+    if (result.selectedOption.value === "exit") {
+      console.log(
+        chalk.cyan("Thank you for using Interactive Terminal Selector!")
+      );
+      console.log(chalk.gray("Goodbye! 👋"));
+      throw new Error("Force exit");
+    }
+
+    console.log(chalk.cyan("Selection completed! Starting next session..."));
+    console.log(chalk.dim("─".repeat(50))); // Visual separator
   }
 
   private displayProcessing(message: string = "Processing..."): void {
