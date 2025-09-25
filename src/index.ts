@@ -11,6 +11,17 @@ class TerminalApp {
   private async askQuestion(question: string): Promise<string> {
     const inputHandler = new InputHandler();
     const answer = await inputHandler.askQuestion(question);
+
+    // Check for quit/exit commands (case insensitive and flexible)
+    const trimmedAnswer = answer.trim().toLowerCase();
+    const exitCommands = ["quit", "exit", "q", "bye", "goodbye", "stop"];
+
+    if (exitCommands.includes(trimmedAnswer)) {
+      console.log(chalk.yellow("\nExiting application..."));
+      console.log(chalk.gray("Goodbye! 👋"));
+      throw new Error("User exit command");
+    }
+
     return answer;
   }
 
@@ -18,7 +29,12 @@ class TerminalApp {
     console.log(chalk.cyan.bold("🚀 Interactive Terminal Selector"));
     console.log(
       chalk.gray(
-        "Use arrow keys to navigate, Enter to select, Escape or Q to quit\n"
+        "Use arrow keys to navigate, Enter to select, Escape or Q to quit"
+      )
+    );
+    console.log(
+      chalk.gray(
+        'Type "quit", "exit", or "q" in the input field to end the session\n'
       )
     );
 
@@ -49,6 +65,8 @@ class TerminalApp {
             break;
           } else if (error.message === "Force exit") {
             break;
+          } else if (error.message === "User exit command") {
+            break; // Exit cleanly, message already shown
           } else {
             console.log(chalk.red(`\nError: ${error.message}`));
             // Continue the loop even on error
